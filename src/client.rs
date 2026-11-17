@@ -79,7 +79,13 @@ impl ClientBuilder {
             .redirect(reqwest::redirect::Policy::none())
             .user_agent(format!("billionverify-rust/{VERSION}"))
             .build()
-            .map_err(|e| Error::Network(ErrorInfo::new(e.to_string(), "NETWORK_ERROR", 0)))?;
+            .map_err(|e| {
+                Error::Network(ErrorInfo::new(
+                    e.without_url().to_string(),
+                    "NETWORK_ERROR",
+                    0,
+                ))
+            })?;
         let sleeper: Sleeper = self
             .sleeper
             .unwrap_or_else(|| Arc::new(|d| Box::pin(async move { tokio::time::sleep(d).await })));
@@ -208,7 +214,7 @@ fn map_transport(e: reqwest::Error, timeout: Duration) -> Error {
         Error::timeout(format!("Request timed out after {}ms", timeout.as_millis()))
     } else {
         Error::Network(ErrorInfo::new(
-            format!("Network error: {e}"),
+            format!("Network error: {}", e.without_url()),
             "NETWORK_ERROR",
             0,
         ))

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.1
+
+- Webhook verification: the timestamp window no longer overflows on extreme timestamps (checked arithmetic), negative timestamps are rejected, and an empty secret never verifies.
+- Network error messages no longer carry the request URL, so pre-signed download signatures stay out of logs.
+
 ## 1.0.0
 
 - First release.

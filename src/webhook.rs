@@ -17,17 +17,21 @@ pub fn verify_webhook_signature(
     secret: &str,
     tolerance_seconds: u64,
 ) -> bool {
+    if secret.trim().is_empty() {
+        return false;
+    }
     let ts: i64 = match timestamp.trim().parse() {
-        Ok(v) => v,
-        Err(_) => return false,
+        Ok(v) if v >= 0 => v,
+        _ => return false,
     };
     if tolerance_seconds > 0 {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0);
-        if (now - ts).unsigned_abs() > tolerance_seconds {
-            return false;
+        match now.checked_sub(ts) {
+            Some(diff) if diff.unsigned_abs() <= tolerance_seconds => {}
+            _ => return false,
         }
     }
     let provided = match signature.trim().strip_prefix("sha256=") {

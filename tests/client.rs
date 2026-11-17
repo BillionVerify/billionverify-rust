@@ -950,6 +950,38 @@ async fn connection_refused_is_network_error() {
 }
 
 #[tokio::test]
+async fn network_error_messages_do_not_contain_the_url() {
+    let a = fixture().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/verify/file/job-1/results"))
+        .respond_with(
+            ResponseTemplate::new(307)
+                .insert_header("Location", "http://127.0.0.1:1/signed.csv?sig=SECRETSIG"),
+        )
+        .mount(&a.server)
+        .await;
+    let err = a
+        .client
+        .download_file_results("job-1", Default::default())
+        .await
+        .unwrap_err();
+    assert!(matches!(err, Error::Network(_)));
+    let msg = err.message();
+    assert!(!msg.contains("SECRETSIG"), "{msg}");
+    assert!(!msg.contains("127.0.0.1"), "{msg}");
+    assert!(!msg.contains("signed.csv"), "{msg}");
+
+    let direct = Client::builder()
+        .api_key("k")
+        .base_url("http://127.0.0.1:1")
+        .build()
+        .unwrap();
+    let err = direct.get_credits().await.unwrap_err();
+    assert!(!err.message().contains("127.0.0.1"), "{}", err.message());
+    assert!(!err.message().contains("/v1/credits"), "{}", err.message());
+}
+
+#[tokio::test]
 async fn empty_key_fails_before_any_request() {
     assert!(matches!(Client::new(""), Err(Error::Authentication(_))));
     assert!(matches!(Client::new("   "), Err(Error::Authentication(_))));
@@ -1097,6 +1129,47 @@ mod webhook {
             "secret",
             0
         ));
+    }
+
+    #[test]
+    fn extreme_and_negative_timestamps_are_rejected_without_overflow() {
+        let body = "{}";
+        for ts in [i64::MIN.to_string(), i64::MAX.to_string(), "-1".to_string()] {
+            let sig = sign("secret", &ts, body);
+            assert!(!verify_webhook_signature(
+                body.as_bytes(),
+                &sig,
+                &ts,
+                "secret",
+                300
+            ));
+            if ts.starts_with('-') {
+                // Negative timestamps never verify, even with the window disabled.
+                assert!(!verify_webhook_signature(
+                    body.as_bytes(),
+                    &sig,
+                    &ts,
+                    "secret",
+                    0
+                ));
+            }
+        }
+    }
+
+    #[test]
+    fn empty_secret_never_verifies() {
+        let ts = now().to_string();
+        let body = "{}";
+        for secret in ["", "   "] {
+            let sig = sign(secret, &ts, body);
+            assert!(!verify_webhook_signature(
+                body.as_bytes(),
+                &sig,
+                &ts,
+                secret,
+                300
+            ));
+        }
     }
 
     #[test]
